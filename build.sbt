@@ -7,6 +7,8 @@ lazy val root = project
     version := "0.1.0-SNAPSHOT",
     scalaVersion := scala3Version,
     libraryDependencies ++= Seq(
-      "org.scalameta" %% "munit" % "1.0.0" % Test
+      "org.scalameta" %% "munit" % "1.0.0" % Test,
+      "net.dv8tion" % "JDA" % "5.6.1",
+      "ch.qos.logback" % "logback-classic" % "1.5.6"
     )
   )
