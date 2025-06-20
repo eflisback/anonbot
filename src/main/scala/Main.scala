@@ -36,7 +36,8 @@ object Main:
       .addCommands(
         Commands
           .slash("ask", "Ask a question anonymously")
-          .addOption(OptionType.STRING, "question", "Your question", true)
+          .addOption(OptionType.STRING, "question", "Your question", true),
+        Commands.slash("help", "Show help message")
       )
       .queue()
 
