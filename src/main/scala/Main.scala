@@ -26,7 +26,13 @@ object Main:
 
   private def initializeBot(token: String) =
     JDABuilder
-      .createLight(token)
+      .createLight(
+        token,
+        GatewayIntent.GUILD_MESSAGES,
+        GatewayIntent.DIRECT_MESSAGES,
+        GatewayIntent.MESSAGE_CONTENT,
+        GatewayIntent.DIRECT_MESSAGE_REACTIONS
+      )
       .addEventListeners(Anonbot)
       .build()
 
