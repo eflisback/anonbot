@@ -40,9 +40,6 @@ object Main:
     jda
       .updateCommands()
       .addCommands(
-        Commands
-          .slash("ask", "Ask a question anonymously")
-          .addOption(OptionType.STRING, "question", "Your question", true),
         Commands.slash("help", "Show help message")
       )
       .queue()
@@ -51,8 +48,16 @@ object Main:
     try
       jda.awaitReady()
       println("Bot is now running! Press Ctrl+C to stop.")
+
+      sys.addShutdownHook {
+        println("Shutting down gracefully...")
+        Anonbot.cleanup()
+        jda.shutdown()
+      }
+
       Thread.currentThread().join()
     catch
       case _: InterruptedException =>
-        println("Shutting down gracefully...")
+        println("Bot interrupted, shutting down...")
+        Anonbot.cleanup()
         jda.shutdown()
