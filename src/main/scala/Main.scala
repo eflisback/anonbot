@@ -1,13 +1,11 @@
 import net.dv8tion.jda.api.{JDABuilder, JDA}
 import net.dv8tion.jda.api.requests.GatewayIntent
 import net.dv8tion.jda.api.interactions.commands.build.Commands
-import net.dv8tion.jda.api.interactions.commands.OptionType
-
-import scala.util.{Try, Success, Failure}
 
 import discord.Anonbot
 import config.BotConfig
-import utils.Logger
+import utils.{Logger, LogLevel}
+import scala.util.{Try, Success, Failure}
 
 object Main:
 
@@ -15,20 +13,20 @@ object Main:
     BotConfig.load() match
       case Success(config) =>
         initializeBot(config) match
-          case Success(jda) =>
-            Anonbot.initialize(config)
+          case Success((jda, anonbot)) =>
             registerCommands(jda)
-            runBot(jda)
+            runBot(jda, anonbot)
           case Failure(exception) =>
-            Logger.error(s"Failed to initialize bot: ${exception.getMessage}")
+            Logger.errorWithException(s"Failed to initialize bot", exception)
             sys.exit(1)
       case Failure(exception) =>
-        Logger.error(exception.getMessage)
+        Logger.errorWithException("Failed to load configuration", exception)
         sys.exit(1)
 
-  private def initializeBot(config: BotConfig): Try[JDA] =
+  private def initializeBot(config: BotConfig): Try[(JDA, Anonbot)] =
     scala.util.Try {
-      JDABuilder
+      val anonbot = new Anonbot(config)
+      val jda = JDABuilder
         .createLight(
           config.token,
           GatewayIntent.GUILD_MESSAGES,
@@ -36,8 +34,10 @@ object Main:
           GatewayIntent.MESSAGE_CONTENT,
           GatewayIntent.DIRECT_MESSAGE_REACTIONS
         )
-        .addEventListeners(Anonbot)
+        .addEventListeners(anonbot)
         .build()
+
+      (jda, anonbot)
     }
 
   private def registerCommands(jda: JDA): Unit =
@@ -51,14 +51,14 @@ object Main:
         error => Logger.errorWithException("Failed to register commands", error)
       )
 
-  private def runBot(jda: JDA): Unit =
+  private def runBot(jda: JDA, anonbot: Anonbot): Unit =
     try
       jda.awaitReady()
       Logger.info("Bot is now running! Press Ctrl+C to stop.")
 
       sys.addShutdownHook {
         Logger.info("Shutting down gracefully...")
-        Anonbot.cleanup()
+        anonbot.cleanup()
         jda.shutdown()
       }
 
@@ -66,5 +66,5 @@ object Main:
     catch
       case _: InterruptedException =>
         Logger.warning("Bot interrupted, shutting down...")
-        Anonbot.cleanup()
+        anonbot.cleanup()
         jda.shutdown()

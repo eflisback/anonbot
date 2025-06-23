@@ -31,30 +31,26 @@ case class PendingQuestion(
     timestamp: Instant = Instant.now()
 )
 
-object Anonbot extends ListenerAdapter:
+class Anonbot(config: BotConfig) extends ListenerAdapter:
   private val pendingQuestions =
     new ConcurrentHashMap[String, PendingQuestion]()
   private val cleanupExecutor: ScheduledExecutorService =
     Executors.newSingleThreadScheduledExecutor()
   private val THUMBS_UP_EMOJI = "U+1f44d"
 
-  private var config: BotConfig = uninitialized
+  cleanupExecutor.scheduleAtFixedRate(
+    () => cleanupExpiredQuestions(),
+    1,
+    1,
+    TimeUnit.MINUTES
+  )
 
-  def initialize(botConfig: BotConfig): Unit =
-    config = botConfig
-
-    cleanupExecutor.scheduleAtFixedRate(
-      () => cleanupExpiredQuestions(),
-      1,
-      1,
-      TimeUnit.MINUTES
-    )
-
-    Logger.info(
-      s"Anonbot initialized for guild: ${config.targetGuildId}, channel: ${config.targetChannelName}"
-    )
+  Logger.info(
+    s"Anonbot instantiated for guild: ${config.targetGuildId}, channel: ${config.targetChannelName}"
+  )
 
   def cleanup(): Unit =
+    Logger.info("Cleaning up Anonbot resources...")
     cleanupExecutor.shutdown()
 
   override def onMessageReceived(event: MessageReceivedEvent): Unit =
