@@ -9,7 +9,10 @@ import net.dv8tion.jda.api.entities.{Guild, Message, User}
 import net.dv8tion.jda.api.entities.emoji.Emoji
 import net.dv8tion.jda.api.entities.MessageReaction
 
+import scala.util.{Try, Success, Failure}
+import scala.compiletime.uninitialized
 import scala.jdk.CollectionConverters.*
+
 import java.util.concurrent.{
   ConcurrentHashMap,
   ScheduledExecutorService,
@@ -17,9 +20,10 @@ import java.util.concurrent.{
   TimeUnit
 }
 import java.time.Instant
-import scala.util.{Try, Success, Failure}
 
 import utils.Logger
+import config.BotConfig
+import net.dv8tion.jda.api.entities.channel.concrete.TextChannel
 
 case class PendingQuestion(
     messageId: Long,
@@ -32,15 +36,23 @@ object Anonbot extends ListenerAdapter:
     new ConcurrentHashMap[String, PendingQuestion]()
   private val cleanupExecutor: ScheduledExecutorService =
     Executors.newSingleThreadScheduledExecutor()
-  private val CONFIRMATION_TIMEOUT_MINUTES = 10
   private val THUMBS_UP_EMOJI = "U+1f44d"
 
-  cleanupExecutor.scheduleAtFixedRate(
-    () => cleanupExpiredQuestions(),
-    1,
-    1,
-    TimeUnit.MINUTES
-  )
+  private var config: BotConfig = uninitialized
+
+  def initialize(botConfig: BotConfig): Unit =
+    config = botConfig
+
+    cleanupExecutor.scheduleAtFixedRate(
+      () => cleanupExpiredQuestions(),
+      1,
+      1,
+      TimeUnit.MINUTES
+    )
+
+    Logger.info(
+      s"Anonbot initialized for guild: ${config.targetGuildId}, channel: ${config.targetChannelName}"
+    )
 
   def cleanup(): Unit =
     cleanupExecutor.shutdown()
@@ -51,9 +63,7 @@ object Anonbot extends ListenerAdapter:
     val user = event.getAuthor
     if user.isBot then return
 
-    val message = event.getMessage
-    val content = message.getContentRaw.strip()
-
+    val content = event.getMessage.getContentRaw.strip()
     handleDMQuestion(event.getJDA, user, content)
 
   override def onMessageReactionAdd(event: MessageReactionAddEvent): Unit =
@@ -72,36 +82,30 @@ object Anonbot extends ListenerAdapter:
       event: SlashCommandInteractionEvent
   ): Unit =
     event.getName match
-      case "help" => handleHelpCommand(event)
-      case _      => sendUnknownCommandReply(event)
+      case "manual" => handleHelpCommand(event)
+      case _        => sendUnknownCommandReply(event)
 
   private def handleDMQuestion(jda: JDA, user: User, question: String): Unit =
-    val MAX_QUESTION_LENGTH = 10000
-
     if question.isEmpty then
       sendPrivateMessage(
         user,
         "Tomt meddelande detekterat. Inkludera din fråga i meddelandet, tack."
       )
-    else if question.length > MAX_QUESTION_LENGTH then
-      Logger.warning(
-        s"Question too long (${question.length} chars)"
-      )
+    else if question.length > config.maxQuestionLength then
+      Logger.warning(s"Question too long (${question.length} chars)")
       sendPrivateMessage(
         user,
-        s"Din fråga är för lång (${question.length} tecken). Försök dra ner den under $MAX_QUESTION_LENGTH tecken."
+        s"Din fråga är för lång (${question.length} tecken). Försök dra ner den under ${config.maxQuestionLength} tecken."
       )
     else
-      Logger.info(s"Processing question from user")
+      Logger.info("Processing question from user")
       val confirmationMessage =
         s"""**Din anonyma fråga:**
            |$question
            |
            |Reagera med ${Emoji
-            .fromUnicode(
-              THUMBS_UP_EMOJI
-            )
-            .getFormatted()} för att bekräfta (går ut om $CONFIRMATION_TIMEOUT_MINUTES minuter)""".stripMargin
+            .fromUnicode(THUMBS_UP_EMOJI)
+            .getFormatted()} för att bekräfta (går ut om ${config.confirmationTimeoutMinutes} minuter)""".stripMargin
 
       user
         .openPrivateChannel()
@@ -113,16 +117,12 @@ object Anonbot extends ListenerAdapter:
                 sentMessage => {
                   val pending = PendingQuestion(sentMessage.getIdLong, question)
                   pendingQuestions.put(user.getId, pending)
-                  Logger
-                    .info(s"Added pending question")
+                  Logger.info("Added pending question")
 
                   sentMessage
                     .addReaction(Emoji.fromUnicode(THUMBS_UP_EMOJI))
                     .queue(
-                      _ =>
-                        Logger.info(
-                          s"Added confirmation reaction"
-                        ),
+                      _ => Logger.info("Added confirmation reaction"),
                       error =>
                         Logger
                           .errorWithException("Failed to add reaction", error)
@@ -150,12 +150,9 @@ object Anonbot extends ListenerAdapter:
       .filter(_ => isThumbsUpReaction(reaction))
       .foreach { pending =>
         pendingQuestions.remove(user.getId)
-        Logger.info(s"Question confirmed")
-        broadcastQuestion(jda, pending.question)
-        sendPrivateMessage(
-          user,
-          "Din fråga har skickats anonymt! ✅"
-        )
+        Logger.info("Question confirmed")
+        sendQuestion(jda, pending.question)
+        sendPrivateMessage(user, "Din fråga har skickats anonymt! ✅")
       }
 
   private def isThumbsUpReaction(reaction: MessageReaction): Boolean =
@@ -164,7 +161,7 @@ object Anonbot extends ListenerAdapter:
     }.getOrElse(false)
 
   private def handleHelpCommand(event: SlashCommandInteractionEvent): Unit =
-    Logger.info(s"Help command requested")
+    Logger.info("Help command requested")
     val helpMessage =
       """**Anonbot, manual**
         |
@@ -199,39 +196,40 @@ object Anonbot extends ListenerAdapter:
             .errorWithException("Failed to send unknown command reply", error)
       )
 
-  private def broadcastQuestion(jda: JDA, question: String): Unit =
-    val guilds = jda.getGuilds.asScala.toList
+  private def sendQuestion(jda: JDA, question: String): Unit =
+    findTargetChannel(jda) match
+      case Some(channel) =>
+        val announcement = s"**Inkommande anonym fråga:**\n$question"
+        channel
+          .sendMessage(announcement)
+          .queue(
+            _ =>
+              Logger.success(
+                s"Question sent to #${channel.getName} in ${channel.getGuild.getName}"
+              ),
+            error =>
+              Logger.errorWithException("Failed to broadcast question", error)
+          )
+      case None =>
+        Logger.error(
+          s"Could not find target channel '#${config.targetChannelName}' in guild ${config.targetGuildId}"
+        )
 
-    if guilds.isEmpty then Logger.warning("Bot is not in any guilds!")
-    else
-      Logger.info(s"Broadcasting question to ${guilds.size} guild(s)")
-      val announcement = s"**Inkommande anonym fråga:**\n\n$question"
-
-      guilds.foreach { guild =>
-        Option(guild.getDefaultChannel) match
-          case None =>
-            Logger.warning(
-              s"No default channel found in guild: ${guild.getName}"
-            )
-          case Some(channel) =>
-            channel.asTextChannel
-              .sendMessage(announcement)
-              .queue(
-                _ => Logger.success(s"Question broadcast to ${guild.getName}"),
-                error =>
-                  Logger.errorWithException(
-                    s"Failed to broadcast to ${guild.getName}",
-                    error
-                  )
-              )
-      }
+  private def findTargetChannel(jda: JDA): Option[TextChannel] =
+    for
+      guild <- Option(jda.getGuildById(config.targetGuildId))
+      channel <- guild
+        .getTextChannelsByName(config.targetChannelName, true)
+        .asScala
+        .headOption
+    yield channel
 
   private def sendPrivateMessage(user: User, message: String): Unit =
     user
       .openPrivateChannel()
       .queue(
         _.sendMessage(message).queue(
-          _ => Logger.info(s"Private message sent"),
+          _ => Logger.info("Private message sent"),
           error =>
             Logger.errorWithException("Failed to send private message", error)
         ),
@@ -241,7 +239,7 @@ object Anonbot extends ListenerAdapter:
 
   private def cleanupExpiredQuestions(): Unit =
     val now = Instant.now()
-    val cutoff = now.minusSeconds(CONFIRMATION_TIMEOUT_MINUTES * 60)
+    val cutoff = now.minusSeconds(config.confirmationTimeoutMinutes * 60)
 
     val expired = pendingQuestions.asScala
       .filter((_, pending) => pending.timestamp.isBefore(cutoff))
@@ -250,7 +248,7 @@ object Anonbot extends ListenerAdapter:
 
     expired.foreach { userId =>
       pendingQuestions.remove(userId)
-      Logger.info(s"Removed expired question")
+      Logger.info("Removed expired question")
     }
 
     if expired.nonEmpty then
