@@ -4,6 +4,7 @@ import net.dv8tion.jda.api.interactions.commands.build.Commands
 import net.dv8tion.jda.api.interactions.commands.OptionType
 
 import discord.Anonbot
+import utils.Logger
 
 object Main:
 
@@ -47,10 +48,10 @@ object Main:
   private def runBot(jda: JDA): Unit =
     try
       jda.awaitReady()
-      println("Bot is now running! Press Ctrl+C to stop.")
+      Logger.info("Bot is now running! Press Ctrl+C to stop.")
 
       sys.addShutdownHook {
-        println("Shutting down gracefully...")
+        Logger.info("Shutting down gracefully...")
         Anonbot.cleanup()
         jda.shutdown()
       }
@@ -58,6 +59,6 @@ object Main:
       Thread.currentThread().join()
     catch
       case _: InterruptedException =>
-        println("Bot interrupted, shutting down...")
+        Logger.warning("Bot interrupted, shutting down...")
         Anonbot.cleanup()
         jda.shutdown()

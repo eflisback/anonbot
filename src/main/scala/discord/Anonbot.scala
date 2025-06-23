@@ -19,6 +19,8 @@ import java.util.concurrent.{
 import java.time.Instant
 import scala.util.{Try, Success, Failure}
 
+import utils.Logger
+
 case class PendingQuestion(
     messageId: Long,
     question: String,
@@ -79,11 +81,15 @@ object Anonbot extends ListenerAdapter:
     if question.isEmpty then
       sendPrivateMessage(user, "Please provide a question!")
     else if question.length > MAX_QUESTION_LENGTH then
+      Logger.warning(
+        s"Question too long (${question.length} chars) from user: ${user.getId}"
+      )
       sendPrivateMessage(
         user,
         s"Your question is too long. Please keep it under $MAX_QUESTION_LENGTH characters."
       )
     else
+      Logger.info(s"Processing question from user")
       val confirmationMessage =
         s"""**Question to be asked anonymously:**
            |$question
@@ -104,27 +110,30 @@ object Anonbot extends ListenerAdapter:
                 sentMessage => {
                   val pending = PendingQuestion(sentMessage.getIdLong, question)
                   pendingQuestions.put(user.getId, pending)
+                  Logger
+                    .info(s"Added pending question")
 
                   sentMessage
                     .addReaction(Emoji.fromUnicode(THUMBS_UP_EMOJI))
                     .queue(
-                      _ => {},
+                      _ =>
+                        Logger.info(
+                          s"Added confirmation reaction"
+                        ),
                       error =>
-                        println(
-                          s"[Error] Failed to add reaction: ${error.getMessage}"
-                        )
+                        Logger
+                          .errorWithException("Failed to add reaction", error)
                     )
                 },
                 error =>
-                  println(
-                    s"[Error] Failed to send confirmation message: ${error.getMessage}"
+                  Logger.errorWithException(
+                    "Failed to send confirmation message",
+                    error
                   )
               )
           },
           error =>
-            println(
-              s"[Error] Failed to open private channel: ${error.getMessage}"
-            )
+            Logger.errorWithException("Failed to open private channel", error)
         )
 
   private def handleConfirmationReaction(
@@ -138,6 +147,7 @@ object Anonbot extends ListenerAdapter:
       .filter(_ => isThumbsUpReaction(reaction))
       .foreach { pending =>
         pendingQuestions.remove(user.getId)
+        Logger.info(s"Question confirmed")
         broadcastQuestion(jda, pending.question)
         sendPrivateMessage(
           user,
@@ -151,6 +161,7 @@ object Anonbot extends ListenerAdapter:
     }.getOrElse(false)
 
   private def handleHelpCommand(event: SlashCommandInteractionEvent): Unit =
+    Logger.info(s"Help command requested")
     val helpMessage =
       """**Anonymous Question Bot Help**
         |
@@ -166,9 +177,8 @@ object Anonbot extends ListenerAdapter:
       .reply(helpMessage)
       .setEphemeral(true)
       .queue(
-        _ => {},
-        error =>
-          println(s"[Error] Failed to send help message: ${error.getMessage}")
+        _ => Logger.info("Help message sent successfully"),
+        error => Logger.errorWithException("Failed to send help message", error)
       )
 
   private def sendUnknownCommandReply(
@@ -180,33 +190,33 @@ object Anonbot extends ListenerAdapter:
       .queue(
         _ => {},
         error =>
-          println(
-            s"[Error] Failed to send unknown command reply: ${error.getMessage}"
-          )
+          Logger
+            .errorWithException("Failed to send unknown command reply", error)
       )
 
   private def broadcastQuestion(jda: JDA, question: String): Unit =
     val guilds = jda.getGuilds.asScala.toList
 
-    if guilds.isEmpty then println("[Warning] Bot is not in any guilds!")
+    if guilds.isEmpty then Logger.warning("Bot is not in any guilds!")
     else
+      Logger.info(s"Broadcasting question to ${guilds.size} guild(s)")
       val announcement = s"**❓ Inkommande anonym fråga:**\n$question"
 
       guilds.foreach { guild =>
         Option(guild.getDefaultChannel) match
           case None =>
-            println(
-              s"[Warning] Couldn't find a default channel in ${guild.getName}"
+            Logger.warning(
+              s"No default channel found in guild: ${guild.getName}"
             )
           case Some(channel) =>
             channel.asTextChannel
               .sendMessage(announcement)
               .queue(
-                _ =>
-                  println(s"[Success] Question broadcast to ${guild.getName}"),
+                _ => Logger.success(s"Question broadcast to ${guild.getName}"),
                 error =>
-                  println(
-                    s"[Error] Failed to broadcast to ${guild.getName}: ${error.getMessage}"
+                  Logger.errorWithException(
+                    s"Failed to broadcast to ${guild.getName}",
+                    error
                   )
               )
       }
@@ -216,11 +226,12 @@ object Anonbot extends ListenerAdapter:
       .openPrivateChannel()
       .queue(
         _.sendMessage(message).queue(
-          _ => {},
+          _ => Logger.info(s"Private message sent"),
           error =>
-            println(s"Failed to send private message: ${error.getMessage}")
+            Logger.errorWithException("Failed to send private message", error)
         ),
-        error => println(s"Failed to open private channel: ${error.getMessage}")
+        error =>
+          Logger.errorWithException("Failed to open private channel", error)
       )
 
   private def cleanupExpiredQuestions(): Unit =
@@ -234,7 +245,8 @@ object Anonbot extends ListenerAdapter:
 
     expired.foreach { userId =>
       pendingQuestions.remove(userId)
+      Logger.info(s"Removed expired question")
     }
 
     if expired.nonEmpty then
-      println(s"[Info] Cleaned up ${expired.size} expired question(s)")
+      Logger.info(s"Cleaned up ${expired.size} expired question(s)")
