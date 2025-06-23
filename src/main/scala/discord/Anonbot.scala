@@ -79,26 +79,29 @@ object Anonbot extends ListenerAdapter:
     val MAX_QUESTION_LENGTH = 10000
 
     if question.isEmpty then
-      sendPrivateMessage(user, "Please provide a question!")
+      sendPrivateMessage(
+        user,
+        "Tomt meddelande detekterat. Inkludera din fråga i meddelandet, tack."
+      )
     else if question.length > MAX_QUESTION_LENGTH then
       Logger.warning(
-        s"Question too long (${question.length} chars) from user: ${user.getId}"
+        s"Question too long (${question.length} chars)"
       )
       sendPrivateMessage(
         user,
-        s"Your question is too long. Please keep it under $MAX_QUESTION_LENGTH characters."
+        s"Din fråga är för lång (${question.length} tecken). Försök dra ner den under $MAX_QUESTION_LENGTH tecken."
       )
     else
       Logger.info(s"Processing question from user")
       val confirmationMessage =
-        s"""**Question to be asked anonymously:**
+        s"""**Din anonyma fråga:**
            |$question
            |
-           |React with ${Emoji
+           |Reagera med ${Emoji
             .fromUnicode(
               THUMBS_UP_EMOJI
             )
-            .getFormatted()} to confirm (expires in $CONFIRMATION_TIMEOUT_MINUTES minutes)""".stripMargin
+            .getFormatted()} för att bekräfta (går ut om $CONFIRMATION_TIMEOUT_MINUTES minuter)""".stripMargin
 
       user
         .openPrivateChannel()
@@ -151,7 +154,7 @@ object Anonbot extends ListenerAdapter:
         broadcastQuestion(jda, pending.question)
         sendPrivateMessage(
           user,
-          "Your question has been submitted anonymously! ✅"
+          "Din fråga har skickats anonymt! ✅"
         )
       }
 
@@ -163,15 +166,15 @@ object Anonbot extends ListenerAdapter:
   private def handleHelpCommand(event: SlashCommandInteractionEvent): Unit =
     Logger.info(s"Help command requested")
     val helpMessage =
-      """**Anonymous Question Bot Help**
+      """**Anonbot, manual**
         |
-        |📝 **How to use:**
-        |1. Send me a direct message with your question
-        |2. I'll show you a preview and ask for confirmation
-        |3. React with 👍 to submit anonymously
+        |📝 **Hur fungerar jag?**
+        |1. Skicka en fråga du önskar ska ställas anonymt till mig privat
+        |2. Jag svarar med en förhandsgranskning och ber dig bekräfta
+        |3. Reagera med 👍 för att ställa frågan anonymt
         |
         |⚡ **Commands:**
-        |`/help` - Show this help message""".stripMargin
+        |`/manual` - Visa detta meddelande""".stripMargin
 
     event
       .reply(helpMessage)
@@ -185,7 +188,9 @@ object Anonbot extends ListenerAdapter:
       event: SlashCommandInteractionEvent
   ): Unit =
     event
-      .reply("❓ Unknown command. Use `/help` for available options.")
+      .reply(
+        "❓ Jag känner inte igen kommandot. Använd `/manual` för att visa användarmanualen."
+      )
       .setEphemeral(true)
       .queue(
         _ => {},
@@ -200,7 +205,7 @@ object Anonbot extends ListenerAdapter:
     if guilds.isEmpty then Logger.warning("Bot is not in any guilds!")
     else
       Logger.info(s"Broadcasting question to ${guilds.size} guild(s)")
-      val announcement = s"**❓ Inkommande anonym fråga:**\n$question"
+      val announcement = s"**Inkommande anonym fråga:**\n\n$question"
 
       guilds.foreach { guild =>
         Option(guild.getDefaultChannel) match
