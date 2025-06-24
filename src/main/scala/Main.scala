@@ -11,6 +11,7 @@ import utils.{Logger, LogLevel}
 // Scala imports
 import scala.util.{Try, Success, Failure}
 
+// Huvudfunktion som startar programmet - läser konfiguration och startar boten
 @main def run(): Unit =
   BotConfig
     .load()
@@ -20,6 +21,7 @@ import scala.util.{Try, Success, Failure}
       sys.exit(1)
     )
 
+// Skapar bot-objektet och ansluter till Discord med rätt inställningar
 def instantiateBot(config: BotConfig): Unit =
   Try {
     val anonbot = new Anonbot(config)
@@ -41,6 +43,7 @@ def instantiateBot(config: BotConfig): Unit =
       sys.exit(1)
     )
 
+// Startar boten, registrerar kommandon och väntar på meddelanden
 def startBot(anonbot: Anonbot, jda: JDA): Unit =
   registerCommands(jda)
 
@@ -60,6 +63,7 @@ def startBot(anonbot: Anonbot, jda: JDA): Unit =
       stopBot(anonbot, jda)
   }
 
+// Registrerar slash-kommandon som användare kan använda (t.ex. /manual)
 def registerCommands(jda: JDA): Unit =
   jda
     .updateCommands()
@@ -71,6 +75,7 @@ def registerCommands(jda: JDA): Unit =
       error => Logger.errorWithException("Failed to register commands", error)
     )
 
+// Stänger ner boten på ett säkert sätt när programmet avslutas
 def stopBot(anonbot: Anonbot, jda: JDA): Unit =
   Logger.info("Shutting down gracefully...")
   anonbot.cleanup()

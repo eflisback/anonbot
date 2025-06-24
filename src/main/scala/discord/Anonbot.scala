@@ -49,10 +49,12 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
     s"Anonbot instantiated for guild: ${config.targetGuildId}, channel: ${config.targetChannelName}"
   )
 
+  // Städar upp resurser när boten stängs ner
   def cleanup(): Unit =
     Logger.info("Cleaning up Anonbot resources...")
     cleanupExecutor.shutdown()
 
+  // Hanterar inkommande meddelanden - lyssnar bara på privata meddelanden
   override def onMessageReceived(event: MessageReceivedEvent): Unit =
     if event.isFromGuild then return
 
@@ -62,6 +64,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
     val content = event.getMessage.getContentRaw.strip()
     handleDMQuestion(event.getJDA, user, content)
 
+  // Hanterar när användare reagerar på meddelanden (för att bekräfta frågor)
   override def onMessageReactionAdd(event: MessageReactionAddEvent): Unit =
     if event.isFromGuild then return
 
@@ -74,6 +77,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
       )
     }
 
+  // Hanterar slash-kommandon som /manual
   override def onSlashCommandInteraction(
       event: SlashCommandInteractionEvent
   ): Unit =
@@ -81,6 +85,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
       case "manual" => handleHelpCommand(event)
       case _        => sendUnknownCommandReply(event)
 
+  // Tar emot en fråga via DM och skickar bekräftelsemeddelande tillbaka
   private def handleDMQuestion(jda: JDA, user: User, question: String): Unit =
     if question.isEmpty then
       sendPrivateMessage(
@@ -135,6 +140,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
             Logger.errorWithException("Failed to open private channel", error)
         )
 
+  // Kontrollerar om användaren bekräftat sin fråga med tummen upp-reaktion
   private def handleConfirmationReaction(
       jda: JDA,
       user: User,
@@ -151,11 +157,13 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
         sendPrivateMessage(user, "Din fråga har skickats anonymt! ✅")
       }
 
+  // Kollar om reaktionen är en tummen upp-emoji
   private def isThumbsUpReaction(reaction: MessageReaction): Boolean =
     Try {
       reaction.getEmoji.asUnicode.getAsCodepoints == THUMBS_UP_EMOJI
     }.getOrElse(false)
 
+  // Visar hjälptext när användare skriver /manual
   private def handleHelpCommand(event: SlashCommandInteractionEvent): Unit =
     Logger.info("Help command requested")
     val helpMessage =
@@ -177,6 +185,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
         error => Logger.errorWithException("Failed to send help message", error)
       )
 
+  // Svarar när användare skriver ett okänt kommando
   private def sendUnknownCommandReply(
       event: SlashCommandInteractionEvent
   ): Unit =
@@ -192,6 +201,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
             .errorWithException("Failed to send unknown command reply", error)
       )
 
+  // Skickar den anonyma frågan till målkanalen på Discord-servern
   private def sendQuestion(jda: JDA, question: String): Unit =
     findTargetChannel(jda) match
       case Some(channel) =>
@@ -211,6 +221,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
           s"Could not find target channel '#${config.targetChannelName}' in guild ${config.targetGuildId}"
         )
 
+  // Hittar rätt textkanal att skicka frågan till
   private def findTargetChannel(jda: JDA): Option[TextChannel] =
     for
       guild <- Option(jda.getGuildById(config.targetGuildId))
@@ -220,6 +231,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
         .headOption
     yield channel
 
+  // Skickar ett privat meddelande till en användare
   private def sendPrivateMessage(user: User, message: String): Unit =
     user
       .openPrivateChannel()
@@ -233,6 +245,7 @@ class Anonbot(config: BotConfig) extends ListenerAdapter:
           Logger.errorWithException("Failed to open private channel", error)
       )
 
+  // Tar bort gamla väntande frågor som inte bekräftats i tid
   private def cleanupExpiredQuestions(): Unit =
     val now = Instant.now()
     val cutoff = now.minusSeconds(config.confirmationTimeoutMinutes * 60)
